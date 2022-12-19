@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "BARK.C": "cpp",
+        "DEBUG.C": "cpp",
+        "FUNCT.C": "cpp",
+        "MAIN.C": "cpp",
+        "TEXT.C": "cpp",
+        "UART.C": "cpp"
+    }
+}

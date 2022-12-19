@@ -1,0 +1,8 @@
+"main.obj",
+"uart.obj",
+"text.obj",
+"debug.obj",
+"bark.obj",
+"funct.obj" 
+TO "bark" REGFILE (.\bark.ORC) 
+RAMSIZE(256) 

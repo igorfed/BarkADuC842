@@ -1,0 +1,2001 @@
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 1   
+
+
+C51 COMPILER V6.12, COMPILATION OF MODULE DEBUG
+OBJECT MODULE PLACED IN .\debug.OBJ
+COMPILER INVOKED BY: e:\Keil\C51\BIN\C51.EXE .\debug.c OPTIMIZE(9,SPEED) REGFILE(.\bark.ORC) DEBUG OBJECTEXTEND
+
+stmt level    source
+
+   1          /*
+   2          ; Bark Firmware ver.1.29  23.06.2011
+   3          ; Процессор:	ADuC842
+   4          ; Компилятор:	Keil ╡Vision2 V2.12 Cx51
+   5          ; Автор:	developed by K.Rogatchev
+   6          ;         modified  by A.Vzheshch
+   7          ; Режим отладки.
+   8          ;_________________________________________________________________________________________________*/
+   9          #include <ADI\ADUC842.H>
+  10          #include <stdio.h>
+  11          #include <ctype.h>
+  12          #include <absacc.h>
+  13          #include <intrins.h>
+  14          
+  15          #include "uart.h"
+  16          #include "bark.h"
+  17          #include "funct.h"
+  18          #include "adc.h"
+  19          #include "focus.h"
+  20          
+  21          //#define RS485_DEBUG_BUILD
+  22          
+  23          extern char code s_enter_debug[];
+  24          extern char code s_help[];
+  25          extern char code s_help1[];
+  26          extern char code s_help2[];
+  27          extern char code s_help_parameter[];
+  28          extern char code s_help_settings[];
+  29          extern char code s_debug_error[];
+  30          //extern char code s_debug_prompt[];
+  31          extern char code s_hist_error[];
+  32          extern char code s_ram_error[];
+  33          
+  34          extern char code s_exit_adc_debug[];
+  35          extern char code s_adc_channel3[];
+  36          extern char code s_adc_channel4[];
+  37          extern char code s_adc_channel5[];	
+  38          extern char code s_single_ADC_mode[];
+  39          extern char code s_cont_ADC_mode[];
+  40          
+  41          extern short idata shutter[];
+  42          
+  43          extern short idata gain[];
+  44          extern unsigned char idata frame[];
+  45          extern short idata index[];
+  46          
+  47          extern unsigned char data average;
+  48          struct exp code exp_table[];
+  49          
+  50          bit bStep = 0;
+  51          extern char status;
+  52          extern bit bHistRdy;
+  53          extern bit bRAMRdy;
+  54          extern char num_ch;
+  55          extern unsigned char VideoMux;
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 2   
+
+  56          
+  57          extern unsigned char idata ucAnalogError;
+  58          extern unsigned char idata ucInfinity_1_5;
+  59          extern unsigned char idata ucFocusMin_1_5;
+  60          extern unsigned char idata ucFocusMax_1_5;
+  61          extern unsigned char idata ucFocusMin_6;
+  62          extern unsigned char idata ucFocusMax_6;
+  63          extern unsigned char idata ucInfinity_6;
+  64          extern unsigned char data adc_h[4];
+  65          extern unsigned char data adc_l[4];
+  66          
+  67          extern bit bFilterDis;
+  68          
+  69          extern short nnn;
+  70          extern unsigned char temp_nord;
+  71          extern unsigned char corr_delay;
+  72          extern unsigned char ManFocus[4];
+  73          extern unsigned char num_adc_ch;
+  74          extern unsigned char focus[3];
+  75          extern bit bADCdebug;
+  76          extern bit bAdcAutoDebug;
+  77          extern bit bDebug;
+  78          extern char idata bNEAR[4];
+  79          extern char idata bFAR[4];
+  80          extern char idata bQ_NEAR[4];
+  81          extern char idata bQ_FAR[4];
+  82          unsigned char idata cDeltaFoc[4] = {0x00, 0x00, 0x00, 0x00};
+  83          extern unsigned char idata ucRcapL;
+  84          extern unsigned char idata ucRcapH;
+  85          
+  86          
+  87          extern unsigned char data frame_limit;
+  88          extern unsigned short exp_delta;
+  89          extern unsigned short shutter_limit;
+  90          extern unsigned short exp_delta_fine;
+  91          
+  92          extern unsigned char ex_corr;
+  93          
+  94          extern bit bDis_Auto;
+  95          
+  96          	
+  97          void CalcExpDelta();
+  98          void CalcExpDeltaFine();
+  99          void fAutoFocus();
+ 100          
+ 101          void PrintAndSetParam()
+ 102          {
+ 103   1      
+ 104   1      	unsigned short array_index;
+ 105   1      			EA = 0;//EADC	= 0;
+ 106   1      				array_index = index[ num_ch ];
+ 107   1      	if( !bDis_Auto )
+ 108   1      	{
+ 109   2      				shutter[ num_ch ] = exp_table[ array_index ].shutter;
+ 110   2      	}
+ 111   1      				if( shutter[ num_ch ] > shutter_limit )
+ 112   1      				{
+ 113   2      					shutter[ num_ch ] = shutter_limit;
+ 114   2      					array_index += exp_delta_fine;
+ 115   2      					if( array_index > INDEX_MAX )
+ 116   2      					{
+ 117   3      						array_index = INDEX_MAX;
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 3   
+
+ 118   3      					}
+ 119   2      				}
+ 120   1      	if( !bDis_Auto )
+ 121   1      	{
+ 122   2      				frame[ num_ch ] = exp_table[ array_index ].frame;
+ 123   2      	}
+ 124   1      				if( frame[ num_ch ] > frame_limit )
+ 125   1      				{
+ 126   2      					frame[ num_ch ] = frame_limit;
+ 127   2      					array_index += exp_delta;
+ 128   2      					if( array_index > INDEX_MAX )
+ 129   2      					{
+ 130   3      						array_index = INDEX_MAX;
+ 131   3      					}
+ 132   2      				}
+ 133   1      				XBYTE[A_FRAME] = frame[ num_ch ];
+ 134   1      
+ 135   1      				XBYTE[A_SHUTTER_H] = *((char*)&shutter[ num_ch ]);
+ 136   1      				XBYTE[A_SHUTTER_L] = *(((char*)&shutter[ num_ch ])+1);
+ 137   1      	if( !bDis_Auto )
+ 138   1      	{
+ 139   2      				gain[ num_ch ] = exp_table[ array_index ].gain;
+ 140   2      	}
+ 141   1      //				putchar( ' ' );putchar( 'g' );putchar( 'a' );putchar( 'i' );putchar( 'n' );putchar( ':' );putchar( '
+             -=' );putchar( ' ' );					  
+ 142   1      //				UartSendWord( gain[ num_ch ] );
+ 143   1      				XBYTE[A_GAIN_H] = *((char*)&gain[ num_ch ]);
+ 144   1      				XBYTE[A_GAIN_L] = *(((char*)&gain[ num_ch ])+1);
+ 145   1      				putchar( ' ' );putchar( ' ' );putchar( ' ' );putchar( ' ' );putchar( ' ' );
+ 146   1      				putchar( 'f' );putchar( 'r' );putchar( 'a' );putchar( 'm' );putchar( 'e' );putchar( ':' );putchar( '='
+             - );putchar( ' ' );					  
+ 147   1      				UartSendWord( frame[ num_ch ] );
+ 148   1      				putchar( ' ' );putchar( 's' );putchar( 'h' );putchar( 'u' );putchar( 't' );putchar( ':' );putchar( '='
+             - );putchar( ' ' );					  
+ 149   1      				UartSendWord( shutter[ num_ch ] );
+ 150   1      				putchar( ' ' );putchar( 'g' );putchar( 'a' );putchar( 'i' );putchar( 'n' );putchar( ':' );putchar( '='
+             - );putchar( ' ' );					  
+ 151   1      				UartSendWord( gain[ num_ch ] );putchar( '\n' );
+ 152   1      			//	puts("\n");
+ 153   1      
+ 154   1      				EA = 1;//	EADC	= 1;
+ 155   1      }
+ 156          
+ 157          void PrintAndSetGain()
+ 158          {
+ 159   1      				UartSendWord( gain[ num_ch ] );
+ 160   1      				XBYTE[A_GAIN_H] = *((char*)&gain[ num_ch ]);
+ 161   1      				XBYTE[A_GAIN_L] = *(((char*)&gain[ num_ch ])+1);
+ 162   1      }
+ 163          void PrintAndSetShutter()
+ 164          {
+ 165   1      				UartSendWord( shutter[ num_ch ] );
+ 166   1      				XBYTE[A_SHUTTER_H] = *((char*)&shutter[ num_ch ]);
+ 167   1      				XBYTE[A_SHUTTER_L] = *(((char*)&shutter[ num_ch ])+1);
+ 168   1      }
+ 169          
+ 170          void DelayStopMotor(unsigned long ulDelay )
+ 171          {
+ 172   1        while(ulDelay!=0x00000000)
+ 173   1      			{
+ 174   2      			ulDelay--;
+ 175   2      			}	
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 4   
+
+ 176   1      }
+ 177          
+ 178          void fTimer(unsigned char ucMode, unsigned char ucValue )
+ 179          {
+ 180   1      			TIMECON = 0; 
+ 181   1      			HTHSEC = 0;
+ 182   1      			SEC = 0;
+ 183   1      			TIMECON = 0x09; 
+ 184   1      
+ 185   1      	    if( ucMode == SEC ) while( SEC < ucValue );			
+ 186   1      			else while( HTHSEC < ucValue );
+ 187   1      }
+ 188          
+ 189          void fFocusParamInit(void)
+ 190          {
+ 191   1      				EADRH = 0x00;
+ 192   1      				EADRL = 0x00;
+ 193   1      				ECON = 1;
+ 194   1      				ECON = 4;
+ 195   1      				ucInfinity_1_5 = EDATA1;
+ 196   1      				ucFocusMin_1_5 = EDATA2;  
+ 197   1      				ucFocusMax_1_5 = EDATA3;
+ 198   1      				ucAnalogError  = EDATA4;
+ 199   1      				
+ 200   1      				EADRH = 0x00;
+ 201   1      				EADRL = 0x01;
+ 202   1      				ECON = 1;
+ 203   1      				ECON = 4;
+ 204   1      				ucInfinity_6 = EDATA1;
+ 205   1      				ucFocusMin_6 = EDATA2;  
+ 206   1      				ucFocusMax_6 = EDATA3;	
+ 207   1      													
+ 208   1      				EADRH = 0x00;
+ 209   1      				EADRL = 0x03;
+ 210   1      				ECON = 1;
+ 211   1      				ECON = 4;
+ 212   1      				ucRcapH = EDATA1; 				
+ 213   1      				ucRcapL = EDATA2;
+ 214   1      }
+ 215          
+ 216          void GetAndPrintAdcOne(unsigned char ucModeCs)
+ 217          {
+ 218   1      	DelayStopMotor(0xFF);    		
+ 219   1      	ADCCON1 = 0xBC;				                                                   	
+ 220   1      	ADCCON2 = ucModeCs;	 
+ 221   1      }
+ 222          
+ 223          void Debug( void )
+ 224          {	
+ 225   1      	unsigned char *ptr_parametres, i, parameter_min, value, parameter_max,  expo_data;	
+ 226   1      
+ 227   1      	unsigned char ch, addr_l, dummy_l = 0xff, addr_h, dummy_h = 0xff,num_bytes_tx,num_bytes_rx,cAdcModeCS = A
+             -DCS_SINGL_CONV_1_5;	
+ 228   1      
+ 229   1      	short si;
+ 230   1      	short *paddr = (short *)&addr_l;
+ 231   1      
+ 232   1      	puts( s_enter_debug );
+ 233   1      	fFocusParamInit();
+ 234   1      
+ 235   1      	while( bDebug )
+ 236   1      	{
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 5   
+
+ 237   2      
+ 238   2      		putchar('\n');
+ 239   2      		putchar('-');
+ 240   2      		ch = getchar();
+ 241   2      		ch = toupper( ch );
+ 242   2      		switch( ch )
+ 243   2      		{
+ 244   3      
+ 245   3      			case '?':
+ 246   3      				EADRH = 0x00;
+ 247   3      				EADRL = 0x02;
+ 248   3      				ECON = 1;
+ 249   3      				ECON = 4;
+ 250   3                      putchar('\n');putchar( 'M' );putchar( 'E' );putchar( '-' );putchar( '1' );putchar( '0' );p
+             -utchar( '8' );putchar( ' ' );putchar( '#' );
+ 251   3      		        for( i = 1; i < 4; i++ )
+ 252   3      		           {
+ 253   4      			        switch( i )
+ 254   4      				       {
+ 255   5      			   		    case 1:
+ 256   5      					        value = EDATA1;
+ 257   5      					     	UartSendByte( value );
+ 258   5      				            break;
+ 259   5      			   		    case 2:
+ 260   5      					     	value = EDATA2;
+ 261   5      					     	UartSendByte( value );
+ 262   5      				            break;
+ 263   5      			   		    case 3:
+ 264   5      					     	value = EDATA3;
+ 265   5      					     	UartSendByte( value );
+ 266   5      				            break;
+ 267   5      					    default:
+ 268   5      				            break;
+ 269   5                             }
+ 270   4      				   }
+ 271   3                      putchar( ' ' );
+ 272   3      				EADRH = 0x00;
+ 273   3      				EADRL = 0x04;
+ 274   3      				ECON = 1;
+ 275   3      				ECON = 4;	   
+ 276   3      			    putchar( ' ' );  putchar( 'l' );  putchar( 'o' );  putchar( 'a' );  putchar( 'd' );  putchar( 'e' )
+             -;  putchar( 'd' );  putchar( ' ' );
+ 277   3      		    	//"loaded 21.06.2011"
+ 278   3      				for( i = 1; i < 5; i++ )
+ 279   3      				   {
+ 280   4      			        switch( i )
+ 281   4      				       {
+ 282   5      			   		    case 1:
+ 283   5      					        value = EDATA1;
+ 284   5      					     	UartSendByte( value );
+ 285   5      			                putchar( '.' );
+ 286   5      				            break;
+ 287   5      			   		    case 2:
+ 288   5      					     	value = EDATA2;
+ 289   5      					     	UartSendByte( value );
+ 290   5      			                putchar( '.' );
+ 291   5      				            break;
+ 292   5      			   		    case 3:
+ 293   5      					     	value = EDATA3;
+ 294   5      					     	UartSendByte( value );
+ 295   5      				            break;
+ 296   5      			   		    case 4:
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 6   
+
+ 297   5      					     	value = EDATA4;
+ 298   5      					     	UartSendByte( value );
+ 299   5      				            break;
+ 300   5      					      default:
+ 301   5      				            break;
+ 302   5      			         }
+ 303   4      				   }
+ 304   3      				puts( s_help );
+ 305   3      				break;
+ 306   3      				
+ 307   3      			case '1':
+ 308   3      				bDebug = 0;
+ 309   3      				bStep = 1;
+ 310   3      				break;
+ 311   3      				
+ 312   3      			case 'M':
+ 313   3      				bDebug = 0;
+ 314   3      				bStep = 0;
+ 315   3      				break;
+ 316   3      				
+ 317   3      	    case 'F':	
+ 318   3      			ch = getchar();
+ 319   3      			ch = toupper( ch );
+ 320   3      			switch( ch )
+ 321   3      			   {		
+ 322   4      			    case '?':
+ 323   4      				   EADRH = 0;
+ 324   4      				   if( UartGetByte( &expo_data ) )
+ 325   4          		           {
+ 326   5      	                   for( addr_l = 0; addr_l < expo_data; addr_l++ )
+ 327   5      	                      {
+ 328   6      						   EADRL = addr_l;
+ 329   6      						   ECON = 1;
+ 330   6      	                       ECON = 4;
+ 331   6      	                       for( i = 1; i < 5; i++ )
+ 332   6      	                          {
+ 333   7      	         	               switch( i )
+ 334   7      	                               {
+ 335   8      		                            case 1:
+ 336   8      		     	                        value = EDATA1;
+ 337   8      		     		                    UartSendByte( value );
+ 338   8      		     	                        putchar(' ');
+ 339   8      	                                    break;
+ 340   8      		                            case 2:
+ 341   8      	     	                     	    value = EDATA2;
+ 342   8      	     		                        UartSendByte( value );
+ 343   8      		     	                        putchar(' ');
+ 344   8      	                                    break;
+ 345   8      		                            case 3:
+ 346   8      		     	                        value = EDATA3;
+ 347   8      		     		                    UartSendByte( value );
+ 348   8      		     	                        putchar(' ');
+ 349   8      	                                    break;
+ 350   8      		                            case 4:
+ 351   8      		     	                        value = EDATA4;
+ 352   8      		     		                    UartSendByte( value );
+ 353   8      		     	                        putchar(' ');
+ 354   8      	                                    break;
+ 355   8      		                            default:
+ 356   8      	                                    break;
+ 357   8      	                               }
+ 358   7      							  }
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 7   
+
+ 359   6      		     	           putchar('\n');
+ 360   6      					      }
+ 361   5      	     	           }
+ 362   4      	     	       else puts( s_debug_error );
+ 363   4                         break;
+ 364   4      					   	
+ 365   4      			    case 'E':
+ 366   4      			        ch = getchar();
+ 367   4      			        ch = toupper( ch );
+ 368   4      			        switch( ch )
+ 369   4      			            {
+ 370   5      			   	         case 'A':
+ 371   5      						     ECON = 6;
+ 372   5      						   	 EADRH = 0;
+ 373   5      							 EADRL = 0;
+ 374   5      	                         ECON = 1;
+ 375   5      	                         ECON = 4;
+ 376   5      	                         break;
+ 377   5      
+ 378   5      			   		     case 'P':
+ 379   5      					         if( UartGetByte( &addr_h ) )
+ 380   5      					             {
+ 381   6      						          if( UartGetByte( &addr_l ) )
+ 382   6      							         {
+ 383   7                                            EADRH = addr_h;
+ 384   7      								      EADRL = addr_l;
+ 385   7      								      ECON = 5;
+ 386   7                                            ECON = 4;
+ 387   7      							          }
+ 388   6      				     	          else puts( s_debug_error );
+ 389   6      				     	         }
+ 390   5      					         else puts( s_debug_error );
+ 391   5                                   break;
+ 392   5      				            
+ 393   5      						 default:
+ 394   5      						     puts( s_debug_error );
+ 395   5      				             break;
+ 396   5                              }
+ 397   4                         break;
+ 398   4      
+ 399   4      		       case 'W':
+ 400   4      			       ch = getchar();
+ 401   4      			       ch = toupper( ch );
+ 402   4      			       switch( ch )
+ 403   4      				           {
+ 404   5      			   		        case 'B':
+ 405   5      					              if( UartGetByte( &addr_h ) )
+ 406   5      					                 {
+ 407   6      						                if( UartGetByte( &addr_l ) )
+ 408   6      						     	             {
+ 409   7      				     		                if( UartGetByte( &i ) )
+ 410   7      								                   {
+ 411   8      				     		                    if( UartGetByte( &value ) )
+ 412   8      									                     {
+ 413   9                                              
+ 414   9      									      	              EADRH = addr_h;
+ 415   9      									      	              EADRL = addr_l;
+ 416   9      									      		            
+ 417   9      								      			            ECON = 1;
+ 418   9      			             	                    switch( i )
+ 419   9      				                                   {
+ 420  10      			   		                                case 1:
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 8   
+
+ 421  10                                                      EDATA1 = value;
+ 422  10      				                                        break;
+ 423  10      			   		                                case 2:
+ 424  10                                                      EDATA2 = value;
+ 425  10      				                                        break;
+ 426  10      			   		                                case 3:
+ 427  10                                                      EDATA3 = value;
+ 428  10      				                                        break;
+ 429  10      			   		                                case 4:
+ 430  10                                                      EDATA4 = value;
+ 431  10      				                                        break;
+ 432  10      					                                  default:
+ 433  10      				                                        break;
+ 434  10                                                 }
+ 435   9      											                  ECON = 5;
+ 436   9      											                  ECON = 2;
+ 437   9                                              ECON = 4;
+ 438   9      											                 }
+ 439   8      				     	             	        else puts( s_debug_error );
+ 440   8      										               }
+ 441   7      				     	                  else puts( s_debug_error );
+ 442   7      								               }
+ 443   6      				        	          else puts( s_debug_error );
+ 444   6      				     	             }
+ 445   5      					              else puts( s_debug_error );
+ 446   5                              break;
+ 447   5      			   		        case 'P':
+ 448   5      					              if( UartGetByte( &addr_h ) )
+ 449   5      					                 {
+ 450   6      						                if( UartGetByte( &addr_l ) )
+ 451   6      						     	             {
+ 452   7                                      
+ 453   7      									              EADRH = addr_h;
+ 454   7      									              EADRL = addr_l;
+ 455   7      		                            for( i = 1; i < 5; i++ )
+ 456   7      		                               {
+ 457   8      				     		                    if( UartGetByte( &value ) )
+ 458   8      									                     {
+ 459   9      			             	                    switch( i )
+ 460   9      				                                   {
+ 461  10      			   		                                case 1:
+ 462  10                                                      EDATA1 = value;
+ 463  10      				                                        break;
+ 464  10      			   		                                case 2:
+ 465  10                                                      EDATA2 = value;
+ 466  10      				                                        break;
+ 467  10      			   		                                case 3:
+ 468  10                                                      EDATA3 = value;
+ 469  10      				                                        break;
+ 470  10      			   		                                case 4:
+ 471  10                                                      EDATA4 = value;
+ 472  10      				                                        break;
+ 473  10      					                                  default:
+ 474  10      				                                        break;
+ 475  10                                                 }
+ 476   9           										               }
+ 477   8      				     	             	        else puts( s_debug_error );
+ 478   8      											   }
+ 479   7      										   ECON = 5;
+ 480   7      										   ECON = 2;
+ 481   7                                                 ECON = 4;
+ 482   7      								               }
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 9   
+
+ 483   6      				        	          else puts( s_debug_error );
+ 484   6      				     	             }
+ 485   5      					              else puts( s_debug_error );
+ 486   5                                 break;
+ 487   5      					          default:
+ 488   5      						            puts( s_debug_error );
+ 489   5      				                break;
+ 490   5                         }
+ 491   4                      break;
+ 492   4      
+ 493   4      				    case 'R':
+ 494   4      			          ch = getchar();
+ 495   4      			          ch = toupper( ch );
+ 496   4      			          switch( ch )
+ 497   4      				           {
+ 498   5      			   		        case 'B':
+ 499   5      					              if( UartGetByte( &addr_h ) )
+ 500   5      					                 {
+ 501   6      						                if( UartGetByte( &addr_l ) )
+ 502   6      						     	             {
+ 503   7      				     		                if( UartGetByte( &i ) )
+ 504   7      									                 {
+ 505   8                                          
+ 506   8      										                EADRH = addr_h;
+ 507   8      										                EADRL = addr_l;
+ 508   8      											              
+ 509   8      											              ECON = 1;
+ 510   8                                          ECON = 4;
+ 511   8      			             	                switch( i )
+ 512   8      				                               {
+ 513   9      			   		                            case 1:
+ 514   9      					     	                     	      value = EDATA1;
+ 515   9      					     	                            putchar(' ');
+ 516   9      					     		                          UartSendByte( value );
+ 517   9      				                                    break;
+ 518   9      			   		                            case 2:
+ 519   9      					     	                     	      value = EDATA2;
+ 520   9      					     	                            putchar(' ');
+ 521   9      					     		                          UartSendByte( value );
+ 522   9      				                                    break;
+ 523   9      			   		                            case 3:
+ 524   9      					     	                     	      value = EDATA3;
+ 525   9      					     	                            putchar(' ');
+ 526   9      					     		                          UartSendByte( value );
+ 527   9      				                                    break;
+ 528   9      			   		                            case 4:
+ 529   9      					     	                     	      value = EDATA4;
+ 530   9      					     	                            putchar(' ');
+ 531   9      					     		                          UartSendByte( value );
+ 532   9      				                                    break;
+ 533   9      					                              default:
+ 534   9      				                                    break;
+ 535   9                                             }
+ 536   8      											             }
+ 537   7      				     	             	    else puts( s_debug_error );
+ 538   7      										           }
+ 539   6      				     	              else puts( s_debug_error );
+ 540   6      								           }
+ 541   5      					              else puts( s_debug_error );
+ 542   5                              break;
+ 543   5      
+ 544   5      			   		        case 'P':
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 10  
+
+ 545   5      					              if( UartGetByte( &addr_h ) )
+ 546   5      					                 {
+ 547   6      						              if( UartGetByte( &addr_l ) )
+ 548   6      						     	          {
+ 549   7      										   EADRH = addr_h;
+ 550   7      										   EADRL = addr_l;
+ 551   7      										   ECON = 1;
+ 552   7                                                 ECON = 4;
+ 553   7      		                                   for( i = 1; i < 5; i++ )
+ 554   7      		                                    {
+ 555   8      			             	                 switch( i )
+ 556   8      				                               {
+ 557   9      			   		                            case 1:
+ 558   9      					     	                     	      value = EDATA1;
+ 559   9      					     		                          UartSendByte( value );
+ 560   9      					     	                            putchar(' ');
+ 561   9      				                                    break;
+ 562   9      			   		                            case 2:
+ 563   9      					     	                     	      value = EDATA2;
+ 564   9      					     		                          UartSendByte( value );
+ 565   9      					     	                            putchar(' ');
+ 566   9      				                                    break;
+ 567   9      			   		                            case 3:
+ 568   9      					     	                     	      value = EDATA3;
+ 569   9      					     		                          UartSendByte( value );
+ 570   9      					     	                            putchar(' ');
+ 571   9      				                                    break;
+ 572   9      			   		                            case 4:
+ 573   9      					     	                     	      value = EDATA4;
+ 574   9      					     		                          UartSendByte( value );
+ 575   9      					     	                            putchar(' ');
+ 576   9      				                                    break;
+ 577   9      					                            default:
+ 578   9      				                                    break;
+ 579   9                                                     }
+ 580   8      										  }
+ 581   7      								         }
+ 582   6      				     	             else puts( s_debug_error );
+ 583   6      								     }
+ 584   5      					              else puts( s_debug_error );
+ 585   5                                        break;
+ 586   5        		                    default:
+ 587   5      						        puts( s_debug_error );
+ 588   5      				                break;
+ 589   5      				           }
+ 590   4      				        break;
+ 591   4      
+ 592   4      					default:
+ 593   4      						puts( s_debug_error );
+ 594   4      				        break;
+ 595   4      				   }
+ 596   3      			  break;
+ 597   3      			  
+ 598   3      
+ 599   3      //#ifdef RS485_DEBUG_BUILD
+ 600   3      
+ 601   3      			case '4':	// write command to rs485 
+ 602   3      	                            //XBYTE[ RS485_CTRL ] = RS_PRESET;//0x40ff//0x0a
+ 603   3      	    	    ch = getchar();
+ 604   3      	    	    ch = toupper( ch );				           
+ 605   3      	    	    switch( ch )
+ 606   3      				       {
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 11  
+
+ 607   4      				        case 'R'://
+ 608   4      							if( UartGetByte( &num_bytes_rx ) )
+ 609   4      							   {
+ 610   5      								putchar('\n');
+ 611   5      	 		                    XBYTE[ 0x46FF ]   = 0x02;
+ 612   5      				                XBYTE[MEM_ADDR]   = 0x00;
+ 613   5      				                XBYTE[MEM_ADDR_H] = 0x00;
+ 614   5      	                            putchar('R');putchar('X');putchar('-');putchar('>');
+ 615   5      				                for( i = 0; i < num_bytes_rx; i++ )
+ 616   5      				                    {
+ 617   6      						            value = XBYTE[RS485_CTRL];
+ 618   6      									value = XBYTE[0x12FF];
+ 619   6      									UartSendByte( value );
+ 620   6      	                                putchar(' ');
+ 621   6      				                    }
+ 622   5      							   }
+ 623   4      							else puts( s_debug_error );
+ 624   4      
+ 625   4      				         	break;
+ 626   4      	
+ 627   4      				        case 'T'://
+ 628   4      							if( UartGetByte( &num_bytes_tx ) )
+ 629   4      								{
+ 630   5      								putchar('\n');
+ 631   5      	 		                    XBYTE[ 0x46FF ]   = 0x01;
+ 632   5      				                XBYTE[MEM_ADDR]   = 0x00;
+ 633   5      				                XBYTE[MEM_ADDR_H] = 0x00;
+ 634   5      	                            putchar('T');putchar('X');putchar('-');putchar('>');
+ 635   5      				                for( i = 0; i < num_bytes_tx; i++ )
+ 636   5      				                    {
+ 637   6      						            value = XBYTE[RS485_CTRL];
+ 638   6      									value = XBYTE[0x12FF];
+ 639   6      									UartSendByte( value );
+ 640   6      	                                putchar(' ');
+ 641   6      				                    }
+ 642   5      								}
+ 643   4      							else puts( s_debug_error );
+ 644   4      
+ 645   4      				         	break;
+ 646   4      						            
+ 647   4      				        case 'D'://rs485 DEBUG            					
+ 648   4      				            puts( "\nenter number of bytes for load to receiver\n");
+ 649   4      						    putchar('R');putchar('S');putchar(' ');putchar('R');putchar('C');putchar('-');putchar('>');
+ 650   4      							if( UartGetByte( &num_bytes_rx ) )
+ 651   4      							   {
+ 652   5      								XBYTE[ RS485_NRCV ] = num_bytes_rx;
+ 653   5      							   }
+ 654   4      							else puts( s_debug_error );				
+ 655   4      				            puts( "\nenter number of bytes for load to transfer\n");
+ 656   4      						    putchar('R');putchar('S');putchar(' ');putchar('T');putchar('R');putchar('-');putchar('>');
+ 657   4      							if( UartGetByte( &num_bytes_tx ) )
+ 658   4      								{
+ 659   5      								 XBYTE[ RS485_NSND ] = num_bytes_tx;
+ 660   5      								}
+ 661   4      							else puts( s_debug_error );				
+ 662   4      				            puts( "\nenter number of bytes for load to error counter\n");
+ 663   4      						    putchar('E');putchar('R');putchar('R');putchar(' ');putchar('-');putchar('>');                  
+             -      
+ 664   4      							if( UartGetByte( &value ) )
+ 665   4      								{
+ 666   5      								 XBYTE[ RS485_ERR ] = value;
+ 667   5      							    }
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 12  
+
+ 668   4      							else puts( s_debug_error );
+ 669   4      	                        puts( "\nloading RAM tx...\n");
+ 670   4      		                    XBYTE[ RS485_CTRL ] = 0x2b;
+ 671   4      			                XBYTE[MEM_ADDR] = 0x00;
+ 672   4      			                XBYTE[MEM_DEFINE] = MEM_RS485;
+ 673   4      	                        parameter_min = 0;
+ 674   4      			                for( i = 0; i < num_bytes_tx; i++ )
+ 675   4      			                    {
+ 676   5      	                             puts( "\nbyte");//printf( "\nbyte");//puts
+ 677   5      			                     UartSendByte( i );	
+ 678   5      			                     putchar( '=' );
+ 679   5      								 if( UartGetByte( &value ) )
+ 680   5      								    {
+ 681   6      				                     XBYTE[MEM_DATA_L] = value;
+ 682   6      								    }
+ 683   5      								 else puts( s_debug_error );
+ 684   5      	                             parameter_min = parameter_min ^ value;
+ 685   5      				                 putchar( '\n' );
+ 686   5      			                    }
+ 687   4      				            XBYTE[MEM_DATA_L] = parameter_min;
+ 688   4      	                        puts( "\nxor byte=");
+ 689   4      			                UartSendByte( parameter_min );
+ 690   4      				            putchar( '\n' );
+ 691   4      	
+ 692   4      	
+ 693   4      	                        puts( "\nreading RAM tx...\n");
+ 694   4      			                XBYTE[MEM_DEFINE] = 0x00;
+ 695   4      			                XBYTE[MEM_ADDR] = 0x00;
+ 696   4      		                    //XBYTE[ RS485_CTRL ] = 0x2a;//was loaded
+ 697   4      			                XBYTE[MEM_DEFINE] = MEM_RS485;
+ 698   4      			                for( i = 0; i <= num_bytes_tx; i++ )
+ 699   4      			                    {
+ 700   5      	                             puts( "\nbyte");//printf( "\nbyte");
+ 701   5      			                     UartSendByte( i );	
+ 702   5      			                     putchar( '=' );
+ 703   5      				                 value = XBYTE[MEM_DATA_L];
+ 704   5      			                     UartSendByte( value );
+ 705   5      				                 putchar( '\n' );
+ 706   5      			                    }
+ 707   4      	
+ 708   4      	                        puts( "\nloading RAM rx...\n");
+ 709   4      			                XBYTE[MEM_DEFINE] = 0x00;
+ 710   4      			                XBYTE[MEM_ADDR] = 0x00;//recovered bigining address
+ 711   4      		                    XBYTE[ RS485_CTRL ] = 0x6b;
+ 712   4      			                XBYTE[MEM_DEFINE] = MEM_RS485;
+ 713   4      			                XBYTE[START_TEST_RS485] = 0x00;
+ 714   4      
+ 715   4      
+ 716   4      				         	break;
+ 717   4      				       default:
+ 718   4      		            		bADCdebug = 0;
+ 719   4      		         			puts( s_exit_adc_debug );
+ 720   4      		         			break;				     		       						         					
+ 721   4      				       }//END SWITCH 
+ 722   3      			  	break;
+ 723   3      //#endif
+ 724   3      			    
+ 725   3      			case 'A':
+ 726   3      				bADCdebug = 1;				
+ 727   3      				puts( "\nadc debug...\n" );												
+ 728   3      				while( bADCdebug )
+ 729   3      	            {
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 13  
+
+ 730   4      	         	putchar( 'A' );putchar( '-' );putchar( '>' );         
+ 731   4      	    	    ch = getchar();
+ 732   4      	    	    ch = toupper( ch );				           
+ 733   4      	    	    switch( ch )
+ 734   4      				       {
+ 735   5      						            
+ 736   5      				        case 'S':	//auto focusing stop
+ 737   5      				        	puts( "\nADC auto stop...\n" );
+ 738   5      		                    ADCCON1 = 0xBC;
+ 739   5      			                ADCCON2 = ADCS_EXT_T_SENSE;                        
+ 740   5      				         	break;						             
+ 741   5      						             
+ 742   5      				        case 'R':	//auto focusing run
+ 743   5      			                puts( "\nADC auto run...\n" );
+ 744   5      			                bADCdebug = 0;
+ 745   5      			                ADCCON1 = ADC_POWER_UP;	
+ 746   5      		                    ADCCON2 = ADCS_EXT_T_SENSE; 
+ 747   5      				         	break;		
+ 748   5      				         			   						           			             
+ 749   5      				        case '1':	//one step auto focusing
+ 750   5      			                putchar('\n');
+ 751   5      			                expo_data = ADCCON1;		                
+ 752   5      			                ch        = ADCCON2;
+ 753   5      			                
+ 754   5      				            num_adc_ch = NORD300;  		                
+ 755   5      		                    GetAndPrintAdcOne(ADCS_SINGL_CONV_1_5);
+ 756   5      		                    fAutoFocus();
+ 757   5      	                    
+ 758   5      				            num_adc_ch = NORD75;                     
+ 759   5      		                    GetAndPrintAdcOne(ADCS_SINGL_CONV_6);
+ 760   5      		                    fAutoFocus();
+ 761   5                          
+ 762   5      				            num_adc_ch = NORD_TEMP;                     
+ 763   5      		                    GetAndPrintAdcOne(ADCS_SINGL_CONV_EXT_T_SENSE);
+ 764   5      		                    fAutoFocus(); 
+ 765   5      	                    
+ 766   5      		                    ADCCON1 = expo_data;                      
+ 767   5      		                    ADCCON2 = ch;                                          
+ 768   5      				         	break;	
+ 769   5      				         			   	
+ 770   5      			   	      case 'N'://PARAM_FOCUS_NARROW  	300	 1.5     01        	
+ 771   5      		                  putchar('\n');
+ 772   5      				          num_adc_ch = NORD300;  
+ 773   5      				          XBYTE[NUM_CHANNEL] = NORD300;   
+ 774   5      				          XBYTE[VIDEO_MUX]   = NORD300;			                
+ 775   5      		                  expo_data = ADCCON1;		                
+ 776   5      		                  ch        = ADCCON2;
+ 777   5      		                  GetAndPrintAdcOne(ADCS_SINGL_CONV_1_5);
+ 778   5      		                  fAutoFocus();
+ 779   5      		                  ADCCON1 = expo_data;                                          
+ 780   5      		                  ADCCON2 = ch;  
+ 781   5      				          break;	
+ 782   5      	 			
+ 783   5      			   	      case 'M'://PARAM_FOCUS_MIDDLE		75   6       02 
+ 784   5      		                  putchar('\n');
+ 785   5      				          num_adc_ch = NORD75;  
+ 786   5      				          XBYTE[NUM_CHANNEL] = NORD75;   
+ 787   5      				          XBYTE[VIDEO_MUX]   = NORD75;			                
+ 788   5      		                  expo_data = ADCCON1;		                
+ 789   5      		                  ch        = ADCCON2;
+ 790   5      		                  GetAndPrintAdcOne(ADCS_SINGL_CONV_6);
+ 791   5      		                  fAutoFocus();
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 14  
+
+ 792   5      		                  ADCCON1 = expo_data;                                          
+ 793   5      		                  ADCCON2 = ch;  
+ 794   5      				          break;
+ 795   5      					                      					                               			   						             
+ 796   5      				        case 'E':	//exit adc debug
+ 797   5      				            		 bADCdebug = 0;
+ 798   5      				         			   puts( s_exit_adc_debug );
+ 799   5      				         			   break;			
+ 800   5      				         			   	           	
+ 801   5      				        case '4':	//
+ 802   5      									       puts( s_adc_channel4 );
+ 803   5      				            		 num_adc_ch = NORD300; 										       
+ 804   5      				         			   GetAndPrintAdcOne(ADCS_SINGL_CONV_1_5);	                         			            	
+ 805   5      				         			   break;
+ 806   5      				         			   
+ 807   5      				        case '3':	//
+ 808   5      	     		         		   puts( s_adc_channel3 );
+ 809   5      				            		 num_adc_ch = NORD75; 	     		         		   
+ 810   5      				         			   GetAndPrintAdcOne(ADCS_SINGL_CONV_6);	                         			            	
+ 811   5      				         	       break;
+ 812   5      				         	       
+ 813   5      				            case '5':	//
+ 814   5      				         			   puts( s_adc_channel5 );
+ 815   5      				            		 num_adc_ch = NORD_TEMP; 				         			   
+ 816   5      				         			   GetAndPrintAdcOne(ADCS_SINGL_CONV_EXT_T_SENSE);			            		         								    
+ 817   5      				         	       break;	
+ 818   5      				         	       
+ 819   5      				         	  default:
+ 820   5      				            		 bADCdebug = 0;
+ 821   5      				         			   puts( s_exit_adc_debug );
+ 822   5      				         			   break;				     		       						         					
+ 823   5      				           }//end select mode ADC	
+ 824   4      	    			 }//exit debug adc			
+ 825   3      				break;
+ 826   3      														
+ 827   3      			case 'W':
+ 828   3      						if( UartGetByte( &addr_l ) )
+ 829   3      						{
+ 830   4      							if( UartGetByte( &value ) )
+ 831   4      							{
+ 832   5      								XBYTE[*paddr] = value;
+ 833   5      							}
+ 834   4      							else puts( s_debug_error );
+ 835   4      						}
+ 836   3      						else puts( s_debug_error );
+ 837   3      						break;
+ 838   3      
+ 839   3      			case 'R':	/* read command */
+ 840   3      						if( UartGetByte( &addr_l ) )
+ 841   3      						{
+ 842   4      							value = XBYTE[*paddr];
+ 843   4      							putchar('\n');
+ 844   4      							UartSendByte( value );
+ 845   4      						}
+ 846   3      						else puts( s_debug_error );
+ 847   3      						break;
+ 848   3      						
+ 849   3      		  case 'P'://     
+ 850   3      				    ch = getchar();
+ 851   3      				    ch = toupper( ch );
+ 852   3      				    switch( ch )
+ 853   3      				          {
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 15  
+
+ 854   4      			   	         case '?':      	
+ 855   4                             puts(s_help_parameter);	
+ 856   4      					             break;
+ 857   4      					                      				          	
+ 858   4      			   	         case 'N'://PARAM_FOCUS_NARROW  	300	 1.5     01        	
+ 859   4                                      num_adc_ch = NORD300;           
+ 860   4      							                  XBYTE[NUM_CHANNEL] = NORD300;   
+ 861   4      				                  			XBYTE[VIDEO_MUX]   = NORD300;							                                             
+             -                       
+ 862   4      					                      addr_l = A_FOCUS_NARROW;
+ 863   4      					                      cAdcModeCS = ADCS_SINGL_CONV_1_5;	
+ 864   4      					                      break;
+ 865   4      
+ 866   4      			   	         case 'M'://PARAM_FOCUS_MIDDLE		75   6     02       	
+ 867   4                                      num_adc_ch = NORD75;  
+ 868   4      							                  XBYTE[NUM_CHANNEL] = NORD75;   
+ 869   4      				                  			XBYTE[VIDEO_MUX]   = NORD75;	                                                    
+             -          
+ 870   4      					                      addr_l = A_FOCUS_MIDDLE;
+ 871   4      					                      cAdcModeCS = ADCS_SINGL_CONV_6;					                      
+ 872   4      					                      break;       
+ 873   4      
+ 874   4      			   	         case 'T'://PARAM_TEMPERATURE		               03       	
+ 875   4                                      num_adc_ch = NORD_TEMP;  	                                                
+             -              
+ 876   4      					                      cAdcModeCS = ADCS_SINGL_CONV_EXT_T_SENSE;					                      
+ 877   4      					                      break;
+ 878   4      
+ 879   4      			             case 'F'://FRAME
+ 880   4      					                      ptr_parametres = &frame[ num_ch ];
+ 881   4                                      parameter_min = FRAME_MIN;
+ 882   4                                      parameter_max = FRAME_MAX;
+ 883   4      					                      addr_l = 0x28;//
+ 884   4      					                      break;
+ 885   4      					                      					                      					                                       					   
+             -                  				                      
+ 886   4      			             case 'G'://GAIN
+ 887   4      				           case 'S'://SHUTTER
+ 888   4      				           case 'E'://EXPOSURE					                      
+ 889   4                              break;
+ 890   4                                      
+ 891   4      					         default:
+ 892   4                  		                puts( s_debug_error );
+ 893   4                                      break;            		                
+ 894   4                  		  }//end  F  
+ 895   3      				    switch( ch )
+ 896   3      				       {
+ 897   4      			   	      case 'F'://FRAME
+ 898   4      			   	          ch = getchar();
+ 899   4      			   	          ch = toupper( ch );
+ 900   4      			   	          while(( ch == '-')||( ch == '+'))
+ 901   4      			   	         	   {
+ 902   5      			   	         	    switch( ch )
+ 903   5      			   	         	       {
+ 904   6      				                    case '-':
+ 905   6      						                    if( *ptr_parametres > parameter_min )
+ 906   6      						                       {
+ 907   7      						                                      if( *ptr_parametres <= parameter_max )
+ 908   7      						                                         *ptr_parametres =*ptr_parametres - 1;
+ 909   7      						                                      else
+ 910   7      						                                         *ptr_parametres = parameter_max;
+ 911   7      						                       }
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 16  
+
+ 912   6      						                    else *ptr_parametres = parameter_min;
+ 913   6      						                    UartSendByte( *((char*)ptr_parametres) );
+ 914   6      						                    XBYTE[*paddr] = *((char*)ptr_parametres);
+ 915   6      						                    ch = getchar();
+ 916   6      						                    ch = toupper( ch );
+ 917   6      						                    putchar('\n');						                                  
+ 918   6      						                    break;//END CASE '-'
+ 919   6      				                    case '+':	
+ 920   6      						                    if( *ptr_parametres < parameter_max ) 
+ 921   6      						                       {
+ 922   7      						                        if( *ptr_parametres >= parameter_min )
+ 923   7      						                            *ptr_parametres =*ptr_parametres + 1;
+ 924   7      						                        else
+ 925   7      						                            *ptr_parametres = parameter_min;
+ 926   7      						                       }
+ 927   6      						                    else//
+ 928   6      						                       {
+ 929   7      						                        *ptr_parametres = parameter_max; 
+ 930   7      						                       }
+ 931   6      						                    UartSendByte( *((char*)ptr_parametres) );
+ 932   6      						                    XBYTE[*paddr] = *((char*)ptr_parametres);
+ 933   6      						                    ch = getchar();
+ 934   6      						                    ch = toupper( ch );
+ 935   6      						                    putchar('\n');						                                  
+ 936   6      						                    break;//END CASE '+'
+ 937   6      						                default:
+ 938   6      						                    puts( s_debug_error );
+ 939   6      						                }//end switch +/-
+ 940   5      			   	             }//end while
+ 941   4      			   	          break;//F	
+ 942   4      			   	         	         			          	
+ 943   4      			   	         case 'T':  
+ 944   4      			   	         	         bADCdebug = 1;			   	         	
+ 945   4      			   	         	         while( ch == 'T')
+ 946   4      			   	         	             {
+ 947   5      			   	         	              GetAndPrintAdcOne(cAdcModeCS);		
+ 948   5      			   	         	              ch = getchar();
+ 949   5      			   	         	              ch = toupper( ch );			   	         	              		   	         	         
+             -    	
+ 950   5      			   	         	             }			   	         	
+ 951   4      			   	         	         break;
+ 952   4      			   	         	         
+ 953   4      			   	         case 'M'://FOCUS
+ 954   4      			   	         case 'N'://FOCUS	
+ 955   4      			   	         	         bADCdebug = 1;		   	         	
+ 956   4      				                     ch = getchar();
+ 957   4      				                     ch = toupper( ch );
+ 958   4                                   while(
+ 959   4                                         ( ch == '-')||
+ 960   4                                         ( ch == '+')||
+ 961   4                                         ( ch == '/')||
+ 962   4                                         ( ch == '*')||
+ 963   4                                         ( ch == '=')||
+ 964   4                                         ( ch == 'F')||
+ 965   4                                         ( ch == 'N')                                   
+ 966   4                                         )
+ 967   4                                        {
+ 968   5      				                           switch( ch )
+ 969   5      				                              {			                                                   
+ 970   6      				                                          case '-':
+ 971   6      					                                                 XBYTE[*paddr] = FOC_FAR;	
+ 972   6      				                                                   putchar('F');putchar('a');putchar('r');putchar(' ')
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 17  
+
+             -;					                                                 
+ 973   6      				                                                   GetAndPrintAdcOne(cAdcModeCS);
+ 974   6      				                                                   DelayStopMotor(SPEED_FOCUS_1);				                 
+             -                                  
+ 975   6      				                                                   XBYTE[*paddr] = FOC_STOP;					                     
+             -                              					                                                   				                              
+             -                     				                                                   	                                           
+             -        	                                                   
+ 976   6      				                                                   ch = getchar();
+ 977   6      				                                                   ch = toupper( ch );
+ 978   6      				                                                   break;//END CASE '-'
+ 979   6      
+ 980   6      				                                          case '+':	
+ 981   6      				                                                   XBYTE[*paddr] = FOC_NEAR;		
+ 982   6      				                                                   putchar('N');putchar('e');putchar('a');putchar('r')
+             -;putchar(' ');				                                                   		                                                 
+             -  
+ 983   6      				                                                   GetAndPrintAdcOne(cAdcModeCS);	
+ 984   6      				                                                   DelayStopMotor(SPEED_FOCUS_1);				                 
+             -                                  
+ 985   6      				                                                   XBYTE[*paddr] = FOC_STOP;					                     
+             -                              						                                                   				                             
+             -                      				                                                   	                                          
+             -         	                                                   
+ 986   6      				                                                   ch = getchar();
+ 987   6      				                                                   ch = toupper( ch );
+ 988   6      				                                                   break;//END CASE '+'
+ 989   6      				                                                   
+ 990   6      				                                          case '/':
+ 991   6      					                                                 XBYTE[*paddr] = FOC_Q_FAR;	
+ 992   6      				                                                   putchar('F');putchar('a');putchar('r');putchar('Q')
+             -;putchar(' ');						                                                 
+ 993   6      				                                                   GetAndPrintAdcOne(cAdcModeCS);
+ 994   6      				                                                   DelayStopMotor(SPEED_FOCUS_2);				                 
+             -                                  
+ 995   6      				                                                   XBYTE[*paddr] = FOC_STOP;					                     
+             -                              					                                                   				                              
+             -                     				                                                   	                                           
+             -        	                                                   
+ 996   6      				                                                   ch = getchar();
+ 997   6      				                                                   ch = toupper( ch );
+ 998   6      				                                                   break;//END CASE '/'
+ 999   6      				                                                   
+1000   6      				                                          case '*':	
+1001   6      				                                                   XBYTE[*paddr] = FOC_Q_NEAR;	
+1002   6      				                                                   putchar('N');putchar('e');putchar('a');putchar('r')
+             -;putchar('Q');putchar(' ');				                                                   			                                   
+             -                
+1003   6      				                                                   GetAndPrintAdcOne(cAdcModeCS);	
+1004   6      				                                                   DelayStopMotor(SPEED_FOCUS_2);				                 
+             -                                  
+1005   6      				                                                   XBYTE[*paddr] = FOC_STOP;					                     
+             -                              						                                                   				                             
+             -                      				                                                   	                                          
+             -         	                                                   
+1006   6      				                                                   ch = getchar();
+1007   6      				                                                   ch = toupper( ch );
+1008   6      				                                                   break;//END CASE '+'
+1009   6      				                                                   
+1010   6      				                                          case '=':	
+1011   6      				                                                   XBYTE[*paddr] = FOC_Q_STOP;	
+1012   6      				                                                   putchar('R');putchar('e');putchar('q');putchar('u')
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 18  
+
+             -;putchar('e');putchar('s');putchar('t');putchar(' ');			                                                   
+1013   6      				                                                   GetAndPrintAdcOne(cAdcModeCS);	
+1014   6      				                                                   ch = getchar();
+1015   6      				                                                   ch = toupper( ch );
+1016   6      				                                                   break;//END CASE '+'	
+1017   6      				                                                   
+1018   6      				                                          case 'F':
+1019   6      					                                                 XBYTE[*paddr] = FOC_Q_FAR;	
+1020   6      				                                                   putchar('F');putchar('a');putchar('r');putchar('C')
+             -;putchar('o');putchar('n');putchar('t');putchar(' ');						                                                 
+1021   6      				                                                   GetAndPrintAdcOne(cAdcModeCS);				                 
+             -                                  				                                                   					                          
+             -                         				                                                   				                                    
+             -               	                                                   	                                                   
+1022   6      				                                                   ch = getchar();
+1023   6      				                                                   ch = toupper( ch );
+1024   6      				                                                   break;//END CASE '-'
+1025   6      
+1026   6      				                                          case 'N':	
+1027   6      				                                                   XBYTE[*paddr] = FOC_Q_NEAR;	
+1028   6      				                                                   putchar('N');putchar('e');putchar('a');putchar('r')
+             -;putchar('C');putchar('o');putchar('n');putchar('t');putchar(' ');				                                                  
+             - 			                                                   
+1029   6      				                                                   GetAndPrintAdcOne(cAdcModeCS);						               
+             -                                    						                                                   				                       
+             -                            				                                                   	                                    
+             -               	                                                   
+1030   6      				                                                   ch = getchar();
+1031   6      				                                                   ch = toupper( ch );
+1032   6      				                                                   break;//END CASE '+'	
+1033   6      				                                                   			                                                
+             -   			                                                   
+1034   6      						                                   default:
+1035   6      						                                           puts( s_debug_error );
+1036   6      				                                               break;//				                                           
+1037   6      				                               }//end switch +/-
+1038   5                                         }//end while
+1039   4      			                       break;//F 
+1040   4      
+1041   4      			   	         case 'S'://SHUTTER
+1042   4      				                     ch = getchar();
+1043   4      				                     ch = toupper( ch );
+1044   4      				                     switch( ch )
+1045   4      				                           {
+1046   5      			   	                          case 'R'://PARAM_SHUT_ROUGH
+1047   5      				                                 ch = getchar();
+1048   5      				                                 ch = toupper( ch );
+1049   5                                               while(( ch == '-')||( ch == '+'))
+1050   5                                                   {
+1051   6      				                                      switch( ch )
+1052   6      				                                           {
+1053   7      				                                            case '-':
+1054   7      			                                                  if( shutter[ num_ch ] > 0 ) shutter[ num_ch ]--;
+1055   7      				                                                PrintAndSetShutter();
+1056   7      				                                                ch = getchar();
+1057   7      				                                                ch = toupper( ch );
+1058   7      	                                                      putchar('\n');
+1059   7      				                                                break;//END CASE '-'
+1060   7      
+1061   7      				                                            case '+':	
+1062   7      				                                                if( shutter[ num_ch ] < SHUTTER_MAX ) shutter[ num_ch 
+             -]++;
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 19  
+
+1063   7      				                                                PrintAndSetShutter();
+1064   7      				                                                ch = getchar();
+1065   7      				                                                ch = toupper( ch );
+1066   7      	                                                      putchar('\n');
+1067   7      				                                                break;//END CASE '+'
+1068   7      						                                       default:
+1069   7      						                                            puts( s_debug_error );
+1070   7      				                                                break;						                                          
+             -  
+1071   7      				                                           }//end switch +/-
+1072   6                                                   }//end while
+1073   5      					                               break;//PARAM_SHUT_ROUGH
+1074   5      
+1075   5      						                        default:
+1076   5      						                             puts( s_debug_error );
+1077   5      					                               break;						                             
+1078   5      				                           }
+1079   4      				                     break;//S
+1080   4      				                     
+1081   4      			   	             case 'G'://GAIN
+1082   4      				                     ch = getchar();
+1083   4      				                     ch = toupper( ch );
+1084   4                                   while(( ch == '-')||( ch == '+'))
+1085   4                                         {
+1086   5      				                            switch( ch )
+1087   5      				                                  {
+1088   6      				                                   case '-':
+1089   6      				                                       if( gain[ num_ch ] > 0 ) gain[ num_ch ]--;
+1090   6      				                                       PrintAndSetGain();
+1091   6      				                                       ch = getchar();
+1092   6      				                                       ch = toupper( ch );
+1093   6      	                                             putchar('\n');
+1094   6      				                                       break;//END CASE '-'
+1095   6      
+1096   6      				                                   case '+':	
+1097   6      			                                         if( gain[ num_ch ] < GAIN_MAX ) gain[ num_ch ]++;
+1098   6      				                                       PrintAndSetGain();
+1099   6      				                                       ch = getchar();
+1100   6      				                                       ch = toupper( ch );
+1101   6      	                                             putchar('\n');
+1102   6      				                                       break;//END CASE '+'
+1103   6      				                                       
+1104   6      						                               default:
+1105   6      						                                   puts( s_debug_error );
+1106   6      				                                       break;//END CASE '+'						                                     
+             -      
+1107   6      				                                  }//end switch +/-
+1108   5                                         }//end while
+1109   4      				                     break;//G
+1110   4      				                     
+1111   4      			   	             case 'E'://exposure
+1112   4      				                     ch = getchar();
+1113   4      				                     ch = toupper( ch );
+1114   4                                   while(( ch == '-')||( ch == '+'))
+1115   4                                         {
+1116   5      				                           switch( ch )
+1117   5      				                                 {
+1118   6      				                                          case '-':
+1119   6      			                                                     if( index[ num_ch ] > 0 ) index[ num_ch ]--;
+1120   6      				                                                   PrintAndSetParam();
+1121   6      				                                                   ch = getchar();
+1122   6      				                                                   ch = toupper( ch );
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 20  
+
+1123   6      	                                                               putchar('\n');
+1124   6      				                                                   break;//END CASE '-'
+1125   6      
+1126   6      				                                          case '+':	
+1127   6      				                                                   if( index[ num_ch ] < INDEX_MAX ) index[ num_ch ]++
+             -;
+1128   6      				                                                   PrintAndSetParam();
+1129   6      				                                                   ch = getchar();
+1130   6      				                                                   ch = toupper( ch );
+1131   6      	                                                               putchar('\n');
+1132   6      				                                                   break;//END CASE '+'
+1133   6      						                                   default:
+1134   6      						                                           puts( s_debug_error );
+1135   6      				                                               break;//				                                           
+1136   6      				                                 }//end switch +/-
+1137   5                                         }//end while
+1138   4      				                     break;//E
+1139   4      
+1140   4      			                 default :
+1141   4                                   puts( s_debug_error );
+1142   4      				                     break;//                             
+1143   4                        }
+1144   3      						break;//parameter
+1145   3      						    						
+1146   3      			case 'C':
+1147   3      				ch = getchar();
+1148   3      				ch = toupper( ch );
+1149   3      				switch( ch )
+1150   3      				{
+1151   4      					case 'H':	/* write command */
+1152   4      						if( UartGetByte( &value ) )
+1153   4      						{
+1154   5      							XBYTE[NUM_CHANNEL] = value;
+1155   5      							if( value < 3 ) num_ch = value;
+1156   5      						}
+1157   4      						else puts( s_debug_error );
+1158   4      						break;
+1159   4      
+1160   4      					case 'V':	/* write command */
+1161   4      						if( UartGetByte( &value ) )
+1162   4      						{
+1163   5      							XBYTE[VIDEO_MUX] = value;
+1164   5      						}
+1165   4      						else puts( s_debug_error );
+1166   4      						break;
+1167   4      
+1168   4      					case 'T':	/* write command */
+1169   4      						  if( UartGetByte( &value ) )
+1170   4      						      {
+1171   5      							    //                   0000 0011
+1172   5      							    //                   1010 0000
+1173   5      		           				switch( value )
+1174   5      		               				{
+1175   6      		               				case 0:	/* write command */
+1176   6      		             		     	    XBYTE[VIDEO_MUX] =  VideoMux;
+1177   6      		               						break;
+1178   6      		               						
+1179   6      		              				case 1:	/* write command */
+1180   6      				     	                XBYTE[VIDEO_MUX] =  VideoMux | 0x80; 
+1181   6      		               						break;
+1182   6      		               						
+1183   6      		               				case 2:	/* write command */
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 21  
+
+1184   6      		             		     	    XBYTE[VIDEO_MUX] =  VideoMux | 0x20;
+1185   6      		               						break;
+1186   6      		               						
+1187   6      		              				case 3:	/* write command */
+1188   6      				     	                XBYTE[VIDEO_MUX] =  VideoMux | 0xA0; 
+1189   6      		               						break;
+1190   6      		               						               						
+1191   6      		               				default:
+1192   6      		               						puts( s_debug_error );               						
+1193   6      		    						      }
+1194   5      		                              }
+1195   4      						  else puts( s_debug_error );
+1196   4      						  break;
+1197   4      
+1198   4      					default:
+1199   4      						puts( s_debug_error );
+1200   4      			           }
+1201   3      				break;
+1202   3      
+1203   3      			case 'S':// set
+1204   3      				ch = getchar();
+1205   3      				ch = toupper( ch );
+1206   3      				switch( ch )
+1207   3      				{
+1208   4      					case '?':	// set  
+1209   4                              puts(s_help_settings);	
+1210   4      					    break;	
+1211   4      					    			    	
+1212   4      					case 'D':	// set default focuses const 
+1213   4      			              EADRH = 0;
+1214   4      			              EADRL = 0;
+1215   4      			              ECON = 1;
+1216   4      			              EDATA1 = INFINITY_15;
+1217   4      			              EDATA2 = FOCUS_MIN_15;
+1218   4      			              EDATA3 = FOCUS_MAX_15;
+1219   4      			              EDATA4 = ANALOG_ERROR;                                          
+1220   4      			              ECON = 5;
+1221   4      			              ECON = 2;
+1222   4      			              ECON = 4;
+1223   4      			              
+1224   4      			              EADRH = 0;
+1225   4      			              EADRL = 1;
+1226   4      			              ECON = 1;
+1227   4      			              EDATA1 = INFINITY_6;
+1228   4      			              EDATA2 = FOCUS_MIN_6;
+1229   4      			              EDATA3 = FOCUS_MAX_6;
+1230   4      			              EDATA4 = DUMMY_LOCAL;                                          
+1231   4      			              ECON = 5;
+1232   4      			              ECON = 2;
+1233   4      			              ECON = 4;
+1234   4      			              
+1235   4      			              EADRH = 0;
+1236   4      			              EADRL = 2;
+1237   4      			              ECON = 1;
+1238   4      			              EDATA1 = 0x10;
+1239   4      			              EDATA2 = 0x76;
+1240   4      			              EDATA3 = 0x05;
+1241   4      			              EDATA4 = DUMMY_LOCAL;                                          
+1242   4      			              ECON = 5;
+1243   4      			              ECON = 2;
+1244   4      			              ECON = 4;
+1245   4      			              ucInfinity_1_5 = INFINITY_15;
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 22  
+
+1246   4      			              ucInfinity_6   = INFINITY_6;
+1247   4      			              ucAnalogError  = ANALOG_ERROR;  
+1248   4      			              
+1249   4      			              EADRH = 0;
+1250   4      			              EADRL = 3;
+1251   4      			              ECON = 1;
+1252   4      			              EDATA1 = 0x80;
+1253   4      			              EDATA2 = 0x00;
+1254   4      			              EDATA3 = 0x00;
+1255   4      			              EDATA4 = 0x00;                                          
+1256   4      			              ECON = 5;
+1257   4      			              ECON = 2;
+1258   4      			              ECON = 4;
+1259   4      							      ucRcapH = EDATA1; 				
+1260   4      							      ucRcapL = EDATA2;  
+1261   4      			
+1262   4      			              EADRH = 0;
+1263   4      			              EADRL = 4;
+1264   4      			              ECON = 1;
+1265   4      			              EDATA1 = 0x03;
+1266   4      			              EDATA2 = 0x08;
+1267   4      			              EDATA3 = 0x20;
+1268   4      			              EDATA4 = 0x12;                                          
+1269   4      			              ECON = 5;
+1270   4      			              ECON = 2;
+1271   4      			              ECON = 4;                                    	
+1272   4      					    break;	
+1273   4      					    
+1274   4      					case 'C':	// set  channel
+1275   4      						
+1276   4      						  if( UartGetByte( &value ) )
+1277   4      						      {
+1278   5      						     	if( value < 3 )
+1279   5      						    	    {
+1280   6      						    	   	 XBYTE[NUM_CHANNEL] = value;
+1281   6      						    	     XBYTE[VIDEO_MUX]   = value;
+1282   6      							         num_ch = value;
+1283   6      						          }
+1284   5      						      else puts( "\nThere are three channals: #00, #01, #02" );						         
+1285   5      						      }
+1286   4      						  else puts( s_debug_error );
+1287   4      					    break;
+1288   4      					    										
+1289   4      					case 'A':	// set All 
+1290   4      						  ch = getchar();
+1291   4      				      ch = toupper( ch );
+1292   4      				      switch( ch )
+1293   4      				        {
+1294   5      				         case 'O':	// set All Open Filter  
+1295   5                               XBYTE[VIDEO_MUX]     = NORD19;	
+1296   5      	                       XBYTE[ NUM_CHANNEL ] = NORD19;                         
+1297   5        	                     fTimer( SEC, 0x04 );                         			         	 		
+1298   5                               XBYTE[ FILTER ]      = F_OUT;
+1299   5        	                     fTimer( SEC, 0x04 );
+1300   5        	                     
+1301   5                               XBYTE[VIDEO_MUX] = NORD300;	
+1302   5      	                       XBYTE[ NUM_CHANNEL ] = NORD300;                          
+1303   5        	                     fTimer( SEC, 0x04 );                         			         	 		
+1304   5                               XBYTE[ FILTER ]      = F_OUT;
+1305   5        	                     fTimer( SEC, 0x04 );
+1306   5        	                     
+1307   5                               XBYTE[VIDEO_MUX]     = NORD75;	
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 23  
+
+1308   5      	                       XBYTE[ NUM_CHANNEL ] = NORD75;                          
+1309   5        	                     fTimer( SEC, 0x04 );                         			         	 		
+1310   5                               XBYTE[ FILTER ]      = F_OUT;
+1311   5        	                     fTimer( SEC, 0x04 );
+1312   5        	                     
+1313   5                               ch = XBYTE[ FILTER ];
+1314   5                               putchar( '\n' );
+1315   5                               putchar( 'F' );putchar( 'i' );putchar( 'l' );putchar( 't' );putchar( 'e' );putcha
+             -r( 'r' );putchar( 's' ); putchar( ':' );
+1316   5                               UartSendByte( ch );				         	
+1317   5      						         break;
+1318   5      						         
+1319   5      				         case 'C':	// set Middle Close Filter  
+1320   5                               XBYTE[VIDEO_MUX]     = NORD19;	
+1321   5      	                       XBYTE[ NUM_CHANNEL ] = NORD19;                         
+1322   5        	                     fTimer( SEC, 0x04 );                         			         	 		
+1323   5                               XBYTE[ FILTER ]      = F_IN;
+1324   5        	                     fTimer( SEC, 0x04 );
+1325   5        	                     
+1326   5                               XBYTE[VIDEO_MUX] = NORD300;	
+1327   5      	                       XBYTE[ NUM_CHANNEL ] = NORD300;                          
+1328   5        	                     fTimer( SEC, 0x04 );                         			         	 		
+1329   5                               XBYTE[ FILTER ]      = F_IN;
+1330   5        	                     fTimer( SEC, 0x04 );
+1331   5        	                     
+1332   5                               XBYTE[VIDEO_MUX]     = NORD75;	
+1333   5      	                       XBYTE[ NUM_CHANNEL ] = NORD75;                          
+1334   5        	                     fTimer( SEC, 0x04 );                         			         	 		
+1335   5                               XBYTE[ FILTER ]      = F_IN;
+1336   5        	                     fTimer( SEC, 0x04 );
+1337   5        	                     
+1338   5                               ch = XBYTE[ FILTER ];
+1339   5                               putchar( '\n' );
+1340   5                               putchar( 'F' );putchar( 'i' );putchar( 'l' );putchar( 't' );putchar( 'e' );putcha
+             -r( 'r' );putchar( 's' ); putchar( ':' );
+1341   5                               UartSendByte( ch );			         	
+1342   5      						         break;	
+1343   5      						         
+1344   5      				         default:
+1345   5      						         puts( s_debug_error );				        	
+1346   5      						         break;
+1347   5      						    }
+1348   4      						  break;
+1349   4      											
+1350   4      					case 'N':	// set Narrow 
+1351   4      						ch = getchar();
+1352   4      				    ch = toupper( ch );
+1353   4      				    switch( ch )
+1354   4      				        {
+1355   5      				         case 'O':	// set Narrow Open Filter  
+1356   5                               XBYTE[VIDEO_MUX] = NORD300;	
+1357   5      	                       XBYTE[ NUM_CHANNEL ] = NORD300;                          
+1358   5        	                     fTimer( SEC, 0x04 );                         			         	 		
+1359   5                               XBYTE[ FILTER ]      = F_OUT;
+1360   5        	                     fTimer( SEC, 0x04 );
+1361   5                               ch = XBYTE[ FILTER ];
+1362   5                               putchar( '\n' );
+1363   5                               putchar( 'F' );putchar( 'i' );putchar( 'l' );putchar( 't' );putchar( 'e' );putcha
+             -r( 'r' );putchar( 's' ); UartSendByte( NORD300 );putchar( ':' );
+1364   5                               UartSendByte( ch );				         	
+1365   5      						         break;
+1366   5      						         
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 24  
+
+1367   5      				         case 'C':	// set Narrow Close Filter  
+1368   5                               XBYTE[VIDEO_MUX] = NORD300;	
+1369   5      	                       XBYTE[ NUM_CHANNEL ] = NORD300;                                                   
+1370   5        	                     fTimer( SEC, 0x04 );                         			         	 		
+1371   5                               XBYTE[ FILTER ]      = F_IN;
+1372   5        	                     fTimer( SEC, 0x04 );
+1373   5                               ch = XBYTE[ FILTER ];
+1374   5                               putchar( '\n' );
+1375   5                               putchar( 'F' );putchar( 'i' );putchar( 'l' );putchar( 't' );putchar( 'e' );putcha
+             -r( 'r' );putchar( 's' ); UartSendByte( NORD300 );putchar( ':' );
+1376   5                               UartSendByte( ch );				         	
+1377   5      						         break;	
+1378   5      						         				        	
+1379   5      				         case 'I':	// set Narrow Infinity  
+1380   5      						         if( UartGetByte( &value ) )
+1381   5      						            {
+1382   6                               EADRH = 0;
+1383   6                               EADRL = 0;
+1384   6                               ECON = 1;
+1385   6                               EDATA1 = value;
+1386   6                               ECON = 5;
+1387   6                               ECON = 2;
+1388   6                               ECON = 4;
+1389   6      						             }
+1390   5      						         else puts( s_debug_error );				         	
+1391   5      						         break;
+1392   5      						         
+1393   5      				         case 'E':	// set Narrow Error
+1394   5      						         if( UartGetByte( &value ) )
+1395   5      						            {
+1396   6                               EADRH = 0;
+1397   6                               EADRL = 0;
+1398   6                               ECON = 1;
+1399   6                               EDATA4 = value;
+1400   6                               ECON = 5;
+1401   6                               ECON = 2;
+1402   6                               ECON = 4;
+1403   6                               ucAnalogError = value;
+1404   6      						             }
+1405   5      						         else puts( s_debug_error );				         	
+1406   5      						         break;
+1407   5      						         
+1408   5      				         default:
+1409   5      						         puts( s_debug_error );				        	
+1410   5      						         break;
+1411   5      						    }
+1412   4      						break;
+1413   4      
+1414   4      			         case '#':	// set Number ME-108
+1415   4      		                EADRH = 0x00;
+1416   4      		                EADRL = 0x02;
+1417   4                              for( i = 1; i < 4; i++ )
+1418   4                                 {
+1419   5       		                    if( UartGetByte( &value ) )
+1420   5      				              {
+1421   6           	                       switch( i )
+1422   6      	                               {
+1423   7      	                                case 1:
+1424   7      			                            EDATA1 = value;
+1425   7      			                            break;
+1426   7      			                        case 2:
+1427   7      			                            EDATA2 = value;
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 25  
+
+1428   7      			                            break;
+1429   7      			                        case 3:
+1430   7      			                            EDATA3 = value;
+1431   7      			                            break;
+1432   7      	                                default:
+1433   7      	                                    break;
+1434   7      	                               }
+1435   6      							    }
+1436   5       	             	        else puts( s_debug_error );
+1437   5      					       }
+1438   4      						ECON = 5;
+1439   4      						ECON = 2;
+1440   4                              ECON = 4;				         	
+1441   4      				        break;
+1442   4      
+1443   4      			         case 'L':	// set loaded date
+1444   4      		                EADRH = 0x00;
+1445   4      		                EADRL = 0x04;
+1446   4                              for( i = 1; i < 5; i++ )
+1447   4                                 {
+1448   5       		                    if( UartGetByte( &value ) )
+1449   5      				              {
+1450   6           	                       switch( i )
+1451   6      	                               {
+1452   7      	                                case 1:
+1453   7      			                            EDATA1 = value;
+1454   7      			                            break;
+1455   7      			                        case 2:
+1456   7      			                            EDATA2 = value;
+1457   7      			                            break;
+1458   7      			                        case 3:
+1459   7      			                            EDATA3 = value;
+1460   7      			                            break;
+1461   7      			                        case 4:
+1462   7      			                            EDATA4 = value;
+1463   7      			                            break;
+1464   7      	                                default:
+1465   7      	                                    break;
+1466   7      	                               }
+1467   6      							    }
+1468   5       	             	        else puts( s_debug_error );
+1469   5      					       }
+1470   4      						ECON = 5;
+1471   4      						ECON = 2;
+1472   4                              ECON = 4;				         	
+1473   4      				        break;
+1474   4      				        
+1475   4      			    case 'T':	// set speed convertion fFocusParamInit
+1476   4      		          EADRH = 0x00;
+1477   4      		          EADRL = 0x03;
+1478   4                    for( i = 1; i < 3; i++ )
+1479   4                        {
+1480   5       		               if( UartGetByte( &value ) )
+1481   5      				               {
+1482   6           	                  switch( i )
+1483   6      	                         {
+1484   7      	                          case 1:
+1485   7      			                          EDATA1 = value;
+1486   7      			                          break;
+1487   7      			                                
+1488   7      			                      case 2:
+1489   7      			                          EDATA2 = value;
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 26  
+
+1490   7      			                          break;
+1491   7      
+1492   7      	                          default:
+1493   7      	                              break;
+1494   7      	                         }
+1495   6      						           }
+1496   5       	             	   else puts( s_debug_error );
+1497   5      					        }
+1498   4      						  ECON = 5;
+1499   4      						  ECON = 2;
+1500   4                    ECON = 4;				         	
+1501   4      				      break;
+1502   4      					
+1503   4      					case 'M':	// set Middle 
+1504   4      						ch = getchar();
+1505   4      				    ch = toupper( ch );						    
+1506   4      				    switch( ch )
+1507   4      				        {
+1508   5      				         case 'O':	// set Middle Open Filter  
+1509   5                               XBYTE[VIDEO_MUX] = NORD75;	
+1510   5      	                       XBYTE[ NUM_CHANNEL ] = NORD75;                          
+1511   5        	                     fTimer( SEC, 0x04 );                         			         	 		
+1512   5                               XBYTE[ FILTER ]      = F_OUT;
+1513   5        	                     fTimer( SEC, 0x04 );
+1514   5                               ch = XBYTE[ FILTER ];
+1515   5                               putchar( '\n' );
+1516   5                               putchar( 'F' );putchar( 'i' );putchar( 'l' );putchar( 't' );putchar( 'e' );putcha
+             -r( 'r' );putchar( 's' ); UartSendByte( NORD75 );putchar( ':' );
+1517   5                               UartSendByte( ch );				         	
+1518   5      						         break;
+1519   5      						         
+1520   5      				         case 'C':	// set Middle Close Filter  
+1521   5                               XBYTE[VIDEO_MUX] = NORD75;	
+1522   5      	                       XBYTE[ NUM_CHANNEL ] = NORD75;                          
+1523   5        	                     fTimer( SEC, 0x04 );                         			         	 		
+1524   5                               XBYTE[ FILTER ]      = F_IN;
+1525   5        	                     fTimer( SEC, 0x04 );
+1526   5                               ch = XBYTE[ FILTER ];
+1527   5                               putchar( '\n' );
+1528   5                               putchar( 'F' );putchar( 'i' );putchar( 'l' );putchar( 't' );putchar( 'e' );putcha
+             -r( 'r' );putchar( 's' ); UartSendByte( NORD75 );putchar( ':' );
+1529   5                               UartSendByte( ch );				         	
+1530   5      						         break;		
+1531   5      						         				         				        	
+1532   5      				         case 'I':	// set Middle Infinity  
+1533   5      						         if( UartGetByte( &value ) )
+1534   5      						            {
+1535   6                               EADRH = 0;
+1536   6                               EADRL = 1;
+1537   6                               ECON = 1;
+1538   6                               EDATA1 = value;
+1539   6                               ECON = 5;
+1540   6                               ECON = 2;
+1541   6                               ECON = 4;
+1542   6      						             }
+1543   5      						         else puts( s_debug_error );				         	
+1544   5      						         break;
+1545   5      						         
+1546   5      				         case 'E':	// set Middle Error
+1547   5      						         if( UartGetByte( &value ) )
+1548   5      						            {
+1549   6                               EADRH = 0;
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 27  
+
+1550   6                               EADRL = 1;
+1551   6                               ECON = 1;
+1552   6                               EDATA4 = value;
+1553   6                               ECON = 5;
+1554   6                               ECON = 2;
+1555   6                               ECON = 4;
+1556   6                               ucAnalogError = value;                         
+1557   6      						             }
+1558   5      						         else puts( s_debug_error );				         	
+1559   5      						         break;
+1560   5      						         
+1561   5      				         default:
+1562   5      						         puts( s_debug_error );				        	
+1563   5      						         break;
+1564   5      						    }
+1565   4      						break;
+1566   4      						
+1567   4      					case 'W':	// set Wide 
+1568   4      						ch = getchar();
+1569   4      				    ch = toupper( ch );
+1570   4      				    switch( ch )
+1571   4      				        {
+1572   5      				         case 'O':	// set Wide Open Filter  
+1573   5                               XBYTE[VIDEO_MUX] = NORD19;	
+1574   5      	                       XBYTE[ NUM_CHANNEL ] = NORD19;                         
+1575   5        	                     fTimer( SEC, 0x04 );                         			         	 		
+1576   5                               XBYTE[ FILTER ]      = F_OUT;
+1577   5        	                     fTimer( SEC, 0x04 );
+1578   5                               ch = XBYTE[ FILTER ];
+1579   5                               putchar( '\n' );
+1580   5                               putchar( 'F' );putchar( 'i' );putchar( 'l' );putchar( 't' );putchar( 'e' );putcha
+             -r( 'r' );putchar( 's' ); UartSendByte( NORD19 );putchar( ':' );
+1581   5                               UartSendByte( ch );				         	
+1582   5      						         break;
+1583   5      						         
+1584   5      				         case 'C':	// set Middle Close Filter  
+1585   5                               XBYTE[VIDEO_MUX] = NORD19;	
+1586   5      	                       XBYTE[ NUM_CHANNEL ] = NORD19;                          
+1587   5        	                     fTimer( SEC, 0x04 );                         			         	 		
+1588   5                               XBYTE[ FILTER ]      = F_IN;
+1589   5        	                     fTimer( SEC, 0x04 );
+1590   5                               ch = XBYTE[ FILTER ];
+1591   5                               putchar( '\n' );
+1592   5                               putchar( 'F' );putchar( 'i' );putchar( 'l' );putchar( 't' );putchar( 'e' );putcha
+             -r( 'r' );putchar( 's' ); UartSendByte( NORD19 );putchar( ':' );
+1593   5                               UartSendByte( ch );				         	
+1594   5      						         break;	
+1595   5      						         
+1596   5      				         default:
+1597   5      						         puts( s_debug_error );				        	
+1598   5      						         break;
+1599   5      						    }
+1600   4      						  break;
+1601   4      												
+1602   4      					case 'F':	// set frame limit
+1603   4      						if( UartGetByte( &frame_limit ) )
+1604   4      						    {
+1605   5      							CalcExpDelta();
+1606   5      						    }
+1607   4      						else
+1608   4      						    {
+1609   5      							   puts( s_debug_error );
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 28  
+
+1610   5      						    }
+1611   4      						break;
+1612   4      						
+1613   4      					case 'G':	// set gain
+1614   4      						ch = getchar();
+1615   4      				    ch = toupper( ch );
+1616   4      				    switch( ch )
+1617   4      				        {
+1618   5      					       case 'V':	// set gain value
+1619   5          				         if( UartGetByte( (char*)&gain[ num_ch ] ) )
+1620   5      					  				            {
+1621   6      					  				             if( UartGetByte( ((char*)&gain[ num_ch ])+1 ) )
+1622   6      					  				                {
+1623   7      					  				                 if( gain[ num_ch ] >= GAIN_DEFAULT )
+1624   7      					  				                 	  {
+1625   8      					  				                 	   if( gain[ num_ch ] <= GAIN_MAX ) 
+1626   8      					  				                 	   	   {
+1627   9      								  				                   PrintAndSetGain();
+1628   9      					  				                 	   	   	putchar( '\n' );		
+1629   9      					  				                 	   	   }							  				                   
+1630   8      					  				                     else
+1631   8      					  				                         {
+1632   9                                                    gain[ num_ch ] = GAIN_MAX;
+1633   9                                                   	puts( "\ngain range: 432 to 1023!" );
+1634   9      								  				                    PrintAndSetGain();
+1635   9      					  				                 	   	   	putchar( '\n' );									  				                    					  				       
+             -             	
+1636   9      					  				                         }		
+1637   8      					  				                    }
+1638   7      					  				                 else
+1639   7      					  				                    {
+1640   8      					  				                     gain[ num_ch ] = 0;
+1641   8                                               puts( "\ngain range: 432 to 1023!" );					  				                 
+             -    
+1642   8      								  				               PrintAndSetGain();		
+1643   8      					  				                 	   putchar( '\n' );									  				               			  				                   
+             -   
+1644   8      					  				                    }					  				                     			  				                    	
+1645   7      					  				                }
+1646   6      					  				             else
+1647   6      					  				                {
+1648   7      					  				                 puts( s_debug_error );
+1649   7      					  				                }
+1650   6      					  				            }						  				                
+1651   5      					  				         else
+1652   5      					  				            {
+1653   6      					  				           	 puts( s_debug_error );
+1654   6      					  				            }					  				                
+1655   5      				             break;	
+1656   5      					       default:
+1657   5      					           puts( s_debug_error );
+1658   5      					           break;						              			                 
+1659   5      					      }					  				     	   			        							
+1660   4      					    break;						              			                 
+1661   4      
+1662   4      					case 'E':	// set exposure integral
+1663   4      						ch = getchar();
+1664   4      				    ch = toupper( ch );
+1665   4      				    switch( ch )
+1666   4      				        {
+1667   5      					       case 'V':	// set exposure value
+1668   5          				         if( UartGetByte( (char*)&index[ num_ch ] ) )
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 29  
+
+1669   5      					  				            {
+1670   6      					  				             if( UartGetByte( ((char*)&index[ num_ch ])+1 ) )
+1671   6      					  				                {
+1672   7      					  				                 if( index[ num_ch ] >= 0 )
+1673   7      					  				                 	  {
+1674   8      					  				                 	   if( index[ num_ch ] <= INDEX_MAX )
+1675   8      					  				                 	   	   { 
+1676   9      								  				                   PrintAndSetParam();
+1677   9      					  				                 	   	   putchar( '\n' );			
+1678   9      					  				                 	   	   }						  				                   
+1679   8      					  				                     else
+1680   8      					  				                         {
+1681   9                                                    index[ num_ch ] = INDEX_MAX;
+1682   9                                                   	puts( "\nexposure range: 0 to 511!" );
+1683   9      								  				                    PrintAndSetParam();	
+1684   9      					  				                 	   	   	putchar( '\n' );									  				                    				  				        
+             -            	
+1685   9      					  				                         }		
+1686   8      					  				                    }
+1687   7      					  				                 else
+1688   7      					  				                    {
+1689   8      					  				                     index[ num_ch ] = 0;
+1690   8                                               puts( "\nexposure range: 0 to 511!" );					  				                
+             -     
+1691   8      								  				               PrintAndSetParam();
+1692   8      					  				                 	   putchar( '\n' );									  				               					  				                 
+             -     
+1693   8      					  				                    }					  				                     			  				                    	
+1694   7      					  				                }
+1695   6      					  				             else
+1696   6      					  				                {
+1697   7      					  				                 puts( s_debug_error );
+1698   7      					  				                }
+1699   6      					  				            }						  				                
+1700   5      					  				         else
+1701   5      					  				            {
+1702   6      					  				           	 puts( s_debug_error );
+1703   6      					  				            }					  				                
+1704   5      				             break;	
+1705   5      					       default:
+1706   5      					           puts( s_debug_error );
+1707   5      					           break;						              			                 
+1708   5      					      }					  				     	   			        							
+1709   4      					    break;
+1710   4      					    											
+1711   4      					case 'S':	// shutter  
+1712   4      						ch = getchar();
+1713   4      				    ch = toupper( ch );
+1714   4      				    switch( ch )
+1715   4      				        {
+1716   5      					       case 'R':	// set shutter rough
+1717   5      										ch = getchar();
+1718   5      										ch = toupper( ch );
+1719   5      										switch( ch )
+1720   5      										    {	
+1721   6      					               case 'V':	// set shutter rough value
+1722   6      					  				         if( UartGetByte( (char*)&shutter[ num_ch ] ) )
+1723   6      					  				            {
+1724   7      					  				             if( UartGetByte( ((char*)&shutter[ num_ch ])+1 ) )
+1725   7      					  				                {
+1726   8      					  				                 if( shutter[ num_ch ] >= 0 )
+1727   8      					  				                 	  {
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 30  
+
+1728   9      					  				                 	   if( shutter[ num_ch ] <= SHUTTER_MAX ) 
+1729   9      					  				                 	   	   {
+1730  10      								  				                    PrintAndSetShutter();
+1731  10      					  				                 	   	   	putchar( '\n' );								  				                    
+1732  10      								  				                   }
+1733   9      					  				                     else
+1734   9      					  				                         {
+1735  10                                                    shutter[ num_ch ] = SHUTTER_MAX;
+1736  10                                                   	puts( "\nshutter range: 0 to 620!" );
+1737  10      								  				                    PrintAndSetShutter();
+1738  10      					  				                 	   	   	putchar( '\n' );									  				                    					  				       
+             -             	
+1739  10      					  				                         }		
+1740   9      					  				                    }
+1741   8      					  				                 else
+1742   8      					  				                    {
+1743   9      					  				                     shutter[ num_ch ] = 0;
+1744   9                                               puts( "\nshutter range: 0 to 620!" );					  				                 
+             -    
+1745   9      								  				               PrintAndSetShutter();		
+1746   9      					  				                 	   putchar( '\n' );									  				               			  				                   
+             -   
+1747   9      					  				                    }					  				                     			  				                    	
+1748   8      					  				                }
+1749   7      					  				             else
+1750   7      					  				                {
+1751   8      					  				                 puts( s_debug_error );
+1752   8      					  				                }
+1753   7      					  				            }						  				                
+1754   6      					  				         else
+1755   6      					  				            {
+1756   7      					  				           	 puts( s_debug_error );
+1757   7      					  				            }					  				                
+1758   6      					                 	 break;	
+1759   6      					                 	 
+1760   6      					               case 'L':	
+1761   6      					  				         if( UartGetByte( (char*)&shutter_limit ) )
+1762   6      					  				            {
+1763   7      					  				             if( UartGetByte( ((char*)&shutter_limit)+1 ) )
+1764   7      					  				                {
+1765   8      					  				                 CalcExpDeltaFine();
+1766   8      					  				                 //UartSendWord( shutter_limit);
+1767   8      					  				                }
+1768   7      					  				             else
+1769   7      					  				                {
+1770   8      					  				                 shutter_limit = SHUTTER_MAX;
+1771   8      					  				                }
+1772   7      					  				            }
+1773   6      					  				         else
+1774   6      					  				          	{
+1775   7      					  				           	 puts( s_debug_error );
+1776   7      					  				          	}
+1777   6      					  								 break;						               	
+1778   6      					                 	 					                 	 			               										    		
+1779   6      										     default:
+1780   6      										         puts( s_debug_error );
+1781   6      										         break;
+1782   6      										    }										    				       	   
+1783   5      					  				break; 
+1784   5      					  				 
+1785   5      					       default:
+1786   5      					           puts( s_debug_error );
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 31  
+
+1787   5      					  				 break; 
+1788   5      					      }					  				     	   			        							
+1789   4      						break;
+1790   4      
+1791   4      					default:
+1792   4      						puts( s_debug_error );
+1793   4      					  break; 						
+1794   4      				}
+1795   3      				break;
+1796   3      
+1797   3      
+1798   3      			case 'H':	/* Histogram */
+1799   3      				ch = getchar();
+1800   3      				ch = toupper( ch );
+1801   3      				switch( ch )
+1802   3      				{
+1803   4      					case 'M':	/* make histogram command */
+1804   4      						XBYTE[HIST_CONTROL] = HIST_REQ;	/* Запрос гистограммы */
+1805   4      						bHistRdy = 0;
+1806   4      						si = 0;
+1807   4      						while( --si!=0 )
+1808   4      						{
+1809   5      							status = XBYTE[ HIST_CONTROL ];
+1810   5      							if( bHistRdy )
+1811   5      							{
+1812   6      								//bHistRdy = 1;
+1813   6      								break;
+1814   6      								}
+1815   5      							}
+1816   4      						if( !bHistRdy )	puts( s_hist_error );
+1817   4      						break;
+1818   4      					case 'D':	/* read command */
+1819   4      						XBYTE[MEM_DEFINE] = MEM_HIST;	/* выбрать приемник - гистограмму */
+1820   4      						XBYTE[MEM_ADDR] = 255;			/* обнулить адрес гистограммы */
+1821   4      						puts("\r\n");
+1822   4      						i = 0;
+1823   4      						do
+1824   4      						{
+1825   5      							value = XBYTE[MEM_DATA_H];
+1826   5      							UartSendByte( value );
+1827   5      							value = XBYTE[MEM_DATA_L];
+1828   5      							UartSendByte( value );
+1829   5      							putchar(' ');
+1830   5      						}
+1831   4      						while( --i!=0 );
+1832   4      						break;
+1833   4      
+1834   4      					default:
+1835   4      						puts( s_debug_error );
+1836   4      				}
+1837   3      				break;
+1838   3      			default:
+1839   3      				puts( s_debug_error );
+1840   3      		}
+1841   2      	}
+1842   1      	//if( !bFilterDis ) EX1 = 1;		/* Разрешить прерывание от INT1 */
+1843   1      	XBYTE[ NUM_CHANNEL ] = 0;
+1844   1      	XBYTE[ HIST_CONTROL ] = HIST_REQ;	/* Запрос гистограммы */
+1845   1      	XBYTE[ NUM_CHANNEL ] = 1;
+1846   1      	XBYTE[ HIST_CONTROL ] = HIST_REQ;	/* Запрос гистограммы */
+1847   1      	XBYTE[ NUM_CHANNEL ] = 2;
+1848   1      	XBYTE[ HIST_CONTROL ] = HIST_REQ;	/* Запрос гистограммы */
+C51 COMPILER V6.12  DEBUG                                                                  07/20/2015 16:37:39 PAGE 32  
+
+1849   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   6325    ----
+   CONSTANT SIZE    =    392    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      24
+   IDATA SIZE       =      4    ----
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

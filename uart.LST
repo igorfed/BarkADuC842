@@ -1,0 +1,152 @@
+C51 COMPILER V6.12  UART                                                                   07/20/2015 16:37:39 PAGE 1   
+
+
+C51 COMPILER V6.12, COMPILATION OF MODULE UART
+OBJECT MODULE PLACED IN .\uart.OBJ
+COMPILER INVOKED BY: e:\Keil\C51\BIN\C51.EXE .\uart.c OPTIMIZE(9,SPEED) REGFILE(.\bark.ORC) DEBUG OBJECTEXTEND
+
+stmt level    source
+
+   1          #include <ADI\ADUC842.H>
+   2          #include <stdio.h>
+   3          #include <ctype.h>
+   4          
+   5          void UartInit(void)
+   6          {
+   7   1      /* 
+   8   1      //115200
+   9   1      	T3CON = 0x82; 	
+  10   1      	T3FD = 0x09; 	
+  11   1      	SCON = 0x52;
+  12   1      //*/
+  13   1      ///*  
+  14   1      //57600
+  15   1      	T3CON = 0x83; 	
+  16   1      	T3FD = 0x09; 	
+  17   1      	SCON = 0x52;	
+  18   1      //*/
+  19   1      /*  
+  20   1      //38400
+  21   1      	T3CON = 0x83; 	
+  22   1      	T3FD = 0x2D; 	
+  23   1      	SCON = 0x52;
+  24   1      //*/
+  25   1      /* 
+  26   1      //19200
+  27   1      	T3CON = 0x84; 	
+  28   1      	T3FD = 0x2D; 	
+  29   1      	SCON = 0x52;
+  30   1      //*/
+  31   1      /*
+  32   1      //9600
+  33   1      	T3CON = 0x85; 	
+  34   1      	T3FD = 0x2D; 	
+  35   1      	SCON = 0x52;
+  36   1      //*/
+  37   1      }
+  38          /*
+  39          void UartSendString( char s[] )
+  40          {
+  41          	unsigned char i=0;
+  42          	while( s[i] != 0 )
+  43          	{
+  44          		putchar( s[i++] );
+  45          	}
+  46          }
+  47          */
+  48          void UartSendTetr( char tmp )
+  49          {
+  50   1      	if( tmp < 10 )
+  51   1      	{
+  52   2      		putchar( tmp + '0' );
+  53   2      	}
+  54   1      	else putchar( tmp + '7' );
+  55   1      }
+C51 COMPILER V6.12  UART                                                                   07/20/2015 16:37:39 PAGE 2   
+
+  56          
+  57          void UartSendByte( char byte )
+  58          {
+  59   1      	UartSendTetr( (byte >> 4) & 0x0f );
+  60   1      	UartSendTetr( byte & 0x0f );
+  61   1      }
+  62          
+  63          void UartSendWord( short word )
+  64          {
+  65   1      	UartSendTetr( (*((char*)&word) >> 4) & 0x0f );
+  66   1      	UartSendTetr( *((char*)&word) & 0x0f );
+  67   1      	UartSendTetr( (*(((char*)&word)+1) >> 4) & 0x0f );
+  68   1      	UartSendTetr( *(((char*)&word)+1) & 0x0f );
+  69   1      }
+  70          
+  71          char UartGetByte( char *in_byte )
+  72          {
+  73   1      	char ch;
+  74   1      	ch = getchar();
+  75   1      	ch = toupper( ch );
+  76   1      	if( ( ch < '0' ) || ( ch > 'F' ) )
+  77   1      	{
+  78   2      		return 0 ;
+  79   2      	}
+  80   1      	if( ch <= '9' )
+  81   1      	{
+  82   2      		*in_byte = (ch - '0')<<4;
+  83   2      	}
+  84   1      	else
+  85   1          if( ch >= 'A' )
+  86   1      	{
+  87   2      		*in_byte = (ch - '7')<<4;
+  88   2      	}
+  89   1      	else return 0;
+  90   1      	ch = getchar();
+  91   1      	ch = toupper( ch );
+  92   1      	if( ( ch < '0' ) || ( ch > 'F' ) )
+  93   1      	{
+  94   2      		return 0;
+  95   2      	}
+  96   1      	if( ch <= '9' )
+  97   1      	{
+  98   2      		*in_byte = *in_byte | (ch - '0');
+  99   2      	}
+ 100   1      	else
+ 101   1          if( ch >= 'A' )
+ 102   1      	{
+ 103   2      		*in_byte = *in_byte | (ch - '7' );
+ 104   2      	}
+ 105   1      	else return 0;
+ 106   1      	return 1;
+ 107   1      }
+ 108          /*
+ 109          char UartGetWord( short *in_word )
+ 110          {
+ 111          	char ch, *in_byte = (char *)in_word;
+ 112          	if( UartGetByte( &ch ) )
+ 113          	{
+ 114          		*in_byte = ch;
+ 115          		in_byte++;
+ 116          		if( UartGetByte( &ch ) )
+ 117          		{
+C51 COMPILER V6.12  UART                                                                   07/20/2015 16:37:39 PAGE 3   
+
+ 118          			*in_byte = ch;
+ 119          		}
+ 120          		else return 0;
+ 121          	}
+ 122          	else return 0;
+ 123          	return 1;
+ 124          }
+ 125          */
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    285    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----       8
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
